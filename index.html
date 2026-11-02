@@ -1,0 +1,246 @@
+
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Racing Game</title>
+<style>
+* { box-sizing:border-box; }
+body {
+  margin:0; overflow:hidden;
+  background:#111; color:white;
+  font-family:Arial,sans-serif;
+}
+canvas { display:block; }
+#hud {
+  position:absolute; top:15px; left:15px;
+  font-size:20px; font-weight:bold;
+  text-shadow:2px 2px 4px black;
+  pointer-events:none;
+}
+#controls {
+  position:absolute; bottom:25px; width:100%;
+  display:flex; justify-content:space-around;
+}
+button {
+  width:85px; height:65px; border:2px solid white;
+  border-radius:15px; background:#222b;
+  color:white; font-size:30px;
+}
+#start {
+  position:absolute; inset:0; display:flex;
+  align-items:center; justify-content:center;
+  flex-direction:column; background:#000a;
+  text-align:center;
+}
+#start button { width:180px; font-size:18px; }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  🏁 3D RACING<br>
+  Точки: <span id="score">0</span><br>
+  Скорост: <span id="speed">0</span> km/h
+</div>
+
+<div id="controls">
+  <button id="left">⬅️</button>
+  <button id="right">➡️</button>
+</div>
+
+<div id="start">
+  <h1>🏎️ 3D RACING</h1>
+  <p>Избягвай другите автомобили!</p>
+  <button id="play">СТАРТ</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.Fog(0x87ceeb, 30, 130);
+
+const camera = new THREE.PerspectiveCamera(
+  65, innerWidth/innerHeight, 0.1, 200
+);
+camera.position.set(0, 7, 12);
+camera.lookAt(0, 0, -10);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x555555,2));
+const sun = new THREE.DirectionalLight(0xffffff,2);
+sun.position.set(-5,15,10);
+sun.castShadow = true;
+scene.add(sun);
+
+// Земя
+const ground = new THREE.Mesh(
+ new THREE.PlaneGeometry(200,200),
+ new THREE.MeshStandardMaterial({color:0x39853b})
+);
+ground.rotation.x=-Math.PI/2;
+ground.position.y=-0.15;
+scene.add(ground);
+
+// Писта
+const road = new THREE.Mesh(
+ new THREE.PlaneGeometry(12,200),
+ new THREE.MeshStandardMaterial({color:0x333333})
+);
+road.rotation.x=-Math.PI/2;
+road.position.z=-40;
+scene.add(road);
+
+// Линии на пистата
+const lines=[];
+for(let i=0;i<24;i++){
+ const line=new THREE.Mesh(
+  new THREE.BoxGeometry(.16,.04,3),
+  new THREE.MeshStandardMaterial({color:0xffffff})
+ );
+ line.position.set(0,.02,-i*6);
+ scene.add(line);
+ lines.push(line);
+}
+
+// Количка
+function makeCar(color){
+ const car=new THREE.Group();
+ const body=new THREE.Mesh(
+  new THREE.BoxGeometry(1.5,.65,2.8),
+  new THREE.MeshStandardMaterial({color,metalness:.3,roughness:.4})
+ );
+ body.position.y=.65;
+ body.castShadow=true;
+ car.add(body);
+
+ const top=new THREE.Mesh(
+  new THREE.BoxGeometry(1.1,.6,1.35),
+  new THREE.MeshStandardMaterial({color:0x222a33})
+ );
+ top.position.set(0,1.25,-.15);
+ car.add(top);
+
+ for(let x of [-.83,.83]){
+  for(let z of [-.85,.85]){
+   const wheel=new THREE.Mesh(
+    new THREE.CylinderGeometry(.34,.34,.22,16),
+    new THREE.MeshStandardMaterial({color:0x111111})
+   );
+   wheel.rotation.z=Math.PI/2;
+   wheel.position.set(x,.38,z);
+   car.add(wheel);
+  }
+ }
+ return car;
+}
+
+const player=makeCar(0xe51b23);
+player.position.set(0,0,5);
+scene.add(player);
+
+let obstacles=[];
+function spawnCar(){
+ const lanes=[-3.5,0,3.5];
+ const car=makeCar([0x1565c0,0xffcc00,0xffffff,0x222222][Math.floor(Math.random()*4)]);
+ car.position.set(lanes[Math.floor(Math.random()*3)],0,-90);
+ scene.add(car);
+ obstacles.push(car);
+}
+
+let running=false, score=0, speed=0;
+let left=false,right=false;
+let spawnTimer=0;
+
+function control(id,side){
+ const b=document.getElementById(id);
+ b.addEventListener('pointerdown',e=>{
+  e.preventDefault(); side(true);
+ });
+ b.addEventListener('pointerup',()=>side(false));
+ b.addEventListener('pointerleave',()=>side(false));
+ b.addEventListener('pointercancel',()=>side(false));
+}
+control('left',v=>left=v);
+control('right',v=>right=v);
+
+document.getElementById('play').onclick=()=>{
+ obstacles.forEach(c=>scene.remove(c));
+ obstacles=[];
+ score=0; speed=0; spawnTimer=0;
+ player.position.x=0;
+ running=true;
+ document.getElementById('start').style.display='none';
+};
+
+function endGame(){
+ running=false;
+ document.getElementById('start').style.display='flex';
+ document.querySelector('#start h1').textContent='💥 КРАЙ НА ИГРАТА';
+ document.querySelector('#start p').textContent='Точки: '+score;
+ document.getElementById('play').textContent='ОПИТАЙ ПАК';
+}
+
+function animate(){
+ requestAnimationFrame(animate);
+
+ if(running){
+  speed=Math.min(180,80+score/5);
+  const movement=.16;
+
+  if(left) player.position.x-=movement;
+  if(right) player.position.x+=movement;
+  player.position.x=Math.max(-4.5,Math.min(4.5,player.position.x));
+
+  lines.forEach(line=>{
+   line.position.z+=speed/30;
+   if(line.position.z>10) line.position.z-=144;
+  });
+
+  spawnTimer++;
+  if(spawnTimer>65){
+   spawnCar();
+   spawnTimer=0;
+  }
+
+  obstacles.forEach((car,i)=>{
+   car.position.z+=speed/35;
+
+   if(Math.abs(car.position.x-player.position.x)<1.3 &&
+      Math.abs(car.position.z-player.position.z)<2.3){
+    endGame();
+   }
+
+   if(car.position.z>15){
+    scene.remove(car);
+    obstacles.splice(i,1);
+    score+=10;
+   }
+  });
+
+  document.getElementById('score').textContent=score;
+  document.getElementById('speed').textContent=Math.round(speed);
+  player.rotation.z=left?.12:right?-.12:0;
+ }
+
+ camera.position.x+=(player.position.x*.22-camera.position.x)*.08;
+ camera.lookAt(player.position.x*.2,0,-10);
+ renderer.render(scene,camera);
+}
+animate();
+
+addEventListener('resize',()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
